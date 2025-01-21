@@ -32,12 +32,16 @@ SMARTMATRIX_ALLOCATE_BUFFERS(matrix, TOTAL_WIDTH, TOTAL_HEIGHT, kRefreshDepth, k
 SMARTMATRIX_ALLOCATE_BACKGROUND_LAYER(bg, TOTAL_WIDTH, TOTAL_HEIGHT, COLOR_DEPTH, kbgOptions);
 
 
+// RGB32 or RGB24 (RRRRRGGG GGGBBBBB)?
+const uint8_t INCOMING_COLOR_DEPTH = 16;
+
 const uint16_t NUM_LEDS = TOTAL_WIDTH * TOTAL_HEIGHT;
-const uint16_t BUFFER_SIZE = NUM_LEDS * 3; // Assume RGB data
-uint8_t buf[BUFFER_SIZE];                  // A buffer for the incoming data
+const uint16_t BUFFER_SIZE = NUM_LEDS * (INCOMING_COLOR_DEPTH / 8); 
+uint8_t buf[BUFFER_SIZE]; // A buffer for the incoming color data
 
 void setup() {
 	Serial.begin(921600);
+	Serial.setTimeout(1); 
 
 	pinMode(PICO_LED_PIN, OUTPUT);
 	digitalWrite(PICO_LED_PIN, 1);
@@ -53,18 +57,41 @@ void loop() {
 	static uint32_t frame = 0;
 
 	char chr = Serial.read();
-	if (chr == '*') {  // Special char to signal incoming data
-		// masterFrame
+	// The first byte is a magic number to identify the data format
+	if (chr == '*') { 
+
+
 		uint16_t count = Serial.readBytes((char *)buf, BUFFER_SIZE);
+		
 		if (count == BUFFER_SIZE) {
+
 			rgb24 *buffer = bg.backBuffer();
-			uint16_t idx = 0;
 			rgb24 *col;
-			for (uint16_t i = 0; i < NUM_LEDS; i++) {
-				col = &buffer[i];
-				col->red   = buf[idx++];
-				col->green = buf[idx++];
-				col->blue  = buf[idx++];
+			uint16_t idx = 0;
+
+			if (INCOMING_COLOR_DEPTH == 24) {
+				for (uint16_t i = 0; i < NUM_LEDS; i++) {
+					col = &buffer[i];
+					col->red   = buf[idx++];
+					col->green = buf[idx++];
+					col->blue  = buf[idx++];
+				}
+			} else if (INCOMING_COLOR_DEPTH == 16) {
+				for (uint16_t i = 0; i < NUM_LEDS; i++) {
+					col = &buffer[i];
+
+					uint8_t  high  = buf[idx++];
+					uint8_t  low   = buf[idx++];
+					uint16_t rgb16 = ((uint16_t)high << 8) | low;
+
+					uint8_t r5 = (rgb16 >> 11) & 0x1F;
+					uint8_t g6 = (rgb16 >> 5)  & 0x3F;
+					uint8_t b5 =  rgb16        & 0x1F;
+
+					col->red   = r5 << 3;
+					col->green = g6 << 2;
+					col->blue  = b5 << 3;
+				}
 			}
 			bg.swapBuffers(false);
 		}
