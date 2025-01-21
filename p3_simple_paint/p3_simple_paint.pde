@@ -20,10 +20,10 @@ int indice = 0;
 
 void setup() {
   size(400, 400);
-  
+
   images = new ArrayList<PImage>();
-  
-  for(int i=0; i<19; i++) {
+
+  for (int i=0; i<19; i++) {
     images.add(loadImage("s1/p_" + i + ".png"));
   }
 
@@ -53,7 +53,7 @@ void setup() {
   led.background(0);
   led.stroke(255);
   led.strokeWeight(1);
-  led.endDraw();  
+  led.endDraw();
 }
 
 void keyPressed() {
@@ -79,7 +79,7 @@ void keyPressed() {
 }
 
 void draw() {
-  
+
   int previewOffsetX = 16;
   int previewOffsetY = 16;
   int previewScale = 10;
@@ -94,7 +94,7 @@ void draw() {
     led.line(ax, ay, bx, by);
   }
   led.endDraw();
-  
+
   background(100, 100, 100);
   image(led, previewOffsetX, previewOffsetY, TOTAL_WIDTH * previewScale, TOTAL_HEIGHT * previewScale);
   image(led, TOTAL_WIDTH * previewScale + previewOffsetX * 2, previewOffsetY);
