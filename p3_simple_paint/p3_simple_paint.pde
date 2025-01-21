@@ -14,8 +14,18 @@ byte[]buffer;
 
 PGraphics led;
 
+ArrayList<PImage>images;
+
+int indice = 0;
+
 void setup() {
   size(400, 400);
+  
+  images = new ArrayList<PImage>();
+  
+  for(int i=0; i<19; i++) {
+    images.add(loadImage("s1/p_" + i + ".png"));
+  }
 
   // Disable anti-aliasing
   noSmooth();
@@ -42,7 +52,7 @@ void setup() {
   led.beginDraw();
   led.background(0);
   led.stroke(255);
-  led.strokeWeight(3);
+  led.strokeWeight(1);
   led.endDraw();  
 }
 
@@ -55,11 +65,16 @@ void keyPressed() {
     //String fileName = "Matrix_" + year() + "_" + month() + "_" + day() + "_" + hour() + "_" + minute() + "_" + second();
     String fileName = "Matrix_" + System.currentTimeMillis();
     // We provide an extension
-    led.save(fileName + ".png");
+    led.save("out/" + fileName + ".png");
   } else if (key == 'r') {
     led.beginDraw();
     led.stroke(random(255), random(255), random(255));
     led.endDraw();
+  } else if (keyCode == RIGHT) {
+    led.beginDraw();
+    led.image(images.get(indice), 0, 0);
+    led.endDraw();
+    indice = (indice + 1) % images.size();
   }
 }
 
