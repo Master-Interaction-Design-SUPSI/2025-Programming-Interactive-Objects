@@ -16,3 +16,6 @@
 
 # Processing
 sketch.properties
+
+# Node
+.node_modules
