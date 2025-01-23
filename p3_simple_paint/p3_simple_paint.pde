@@ -31,7 +31,8 @@ void setup() {
   noSmooth();
 
   led = createGraphics(TOTAL_WIDTH, TOTAL_HEIGHT);
-  led.smooth(8);
+  //led.smooth(8);
+  led.noSmooth();
 
   buffer = new byte[TOTAL_WIDTH * TOTAL_HEIGHT * (COLOR_DEPTH / 8)];
 
