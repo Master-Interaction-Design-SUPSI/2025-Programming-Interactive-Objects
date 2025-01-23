@@ -23,8 +23,8 @@ void setup() {
 
   images = new ArrayList<PImage>();
 
-  for (int i=0; i<19; i++) {
-    images.add(loadImage("s1/p_" + i + ".png"));
+  for (int i=0; i<15; i++) {
+    images.add(loadImage("s1/" + nf(i, 2) + ".png"));
   }
 
   // Disable anti-aliasing
