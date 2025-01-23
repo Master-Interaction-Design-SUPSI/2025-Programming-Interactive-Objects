@@ -60,13 +60,20 @@ const uint8_t INCOMING_COLOR_DEPTH = 16;
 
 const uint16_t NUM_LEDS = TOTAL_WIDTH * TOTAL_HEIGHT;
 const uint16_t BUFFER_SIZE = NUM_LEDS * (INCOMING_COLOR_DEPTH / 8);
-uint8_t buf[BUFFER_SIZE]; // A buffer for the incoming color data
+static uint8_t buf[BUFFER_SIZE] __attribute__((aligned(4))); // Align buffer for better memory access
+static uint8_t receivedChunks[8] = {0};
 
 const uint16_t CHUNK_SIZE = 1024;
 const uint16_t HEADER_SIZE = 2;   // [currentChunk, totalChunks]
 
-uint8_t receivedChunks[8] = {0}; // Track received chunks (max 32 chunks)
-bool isReceivingFrame = false;
+// Add these global variables for FPS calculation
+static uint32_t frameCount = 0;
+static uint32_t lastFPSUpdate = 0;
+static float currentFPS = 0;
+
+// Add these constants at the top with other definitions
+#define FPS_UPDATE_INTERVAL 1000  // Update FPS every second
+#define LED_BLINK_INTERVAL 500    // LED blink interval in ms
 
 void setup() {
 	// Serial.begin(921600);
@@ -81,10 +88,15 @@ void setup() {
 	WiFi.begin(ssid, pwd);
 	// Serial.println("");
 
-	// Wait for connection
+	// Add WiFi connection timeout
+	uint32_t connectionStart = millis();
+	const uint32_t WIFI_TIMEOUT = 20000; // 20 seconds timeout
+	
 	while (WiFi.status() != WL_CONNECTED) {
+		if (millis() - connectionStart > WIFI_TIMEOUT) {
+			ESP.restart(); // Restart if cannot connect
+		}
 		delay(500);
-		// Serial.print(".");
 	}
 	udp.begin(UDP_PORT);
 
@@ -104,87 +116,74 @@ void setup() {
 	matrix.begin();
 }
 
+// Helper function for RGB conversion
+inline void convert16to24bit(const uint8_t high, const uint8_t low, rgb24* col) {
+	uint16_t rgb16 = ((uint16_t)high << 8) | low;
+	col->red   = ((rgb16 >> 11) & 0x1F) << 3;
+	col->green = ((rgb16 >> 5)  & 0x3F) << 2;
+	col->blue  = (rgb16 & 0x1F) << 3;
+}
+
 void loop() {
+	static uint32_t lastLEDBlink = 0;
+	int packetSize = udp.parsePacket();
+	
+	if (packetSize) {
+		uint8_t chunkIndex, totalChunks;
+		
+		// Read header
+		udp.read(&chunkIndex, 1);
+		udp.read(&totalChunks, 1);
 
-	static uint32_t frame = 0;
+		// Read chunk data
+		int dataSize = packetSize - HEADER_SIZE; // Subtract header size
+		if (dataSize > 0) {
+			// Use memcpy for faster data copy
+			udp.read(&buf[chunkIndex * CHUNK_SIZE], dataSize);
+			receivedChunks[chunkIndex] = 1;
 
- // Check if there's a UDP packet available
-    int packetSize = udp.parsePacket();
-    if (packetSize) {
-        uint8_t chunkIndex, totalChunks;
-        
-        // Read header
-        udp.read(&chunkIndex, 1);
-        udp.read(&totalChunks, 1);
-        // totalChunksExpected = totalChunks;
+			bool complete = true;
+			for (int i = 0; i < totalChunks && complete; i++) {
+				complete = receivedChunks[i];
+			}
 
-        // Read chunk data
-        int dataSize = packetSize - HEADER_SIZE; // Subtract header size
-        if (dataSize > 0) {
-            udp.read(&buf[chunkIndex * CHUNK_SIZE], dataSize);
-			// udp.flush();
-            receivedChunks[chunkIndex] = 1; // Mark chunk as received
-            
-            //Serial.printf("Received chunk %d/%d (size: %d)\n", chunkIndex + 1, totalChunks, dataSize);
-
-            // Check if we have all chunks
-            bool complete = true;
-            for (int i = 0; i < totalChunks; i++) {
-                if (!receivedChunks[i]) {
-                    complete = false;
-                    break;
-                }
-            }
-
-            if (complete) {
-				// Serial.print(frame);				
-                // Serial.println(" complete frame received!");
-                isReceivingFrame = false;
+			if (complete) {
 				memset(receivedChunks, 0, sizeof(receivedChunks));
-                
-                rgb24 *buffer = bg.backBuffer();
-				rgb24 *col;
-				uint16_t idx = 0;
-
+				
+				rgb24 *buffer = bg.backBuffer();
+				
 				if (INCOMING_COLOR_DEPTH == 24) {
-					for (uint16_t i = 0; i < NUM_LEDS; i++) {
-						col = &buffer[i];
-						col->red   = buf[idx++];
-						col->green = buf[idx++];
-						col->blue  = buf[idx++];
-					}
+					// Use memcpy for 24-bit color
+					memcpy(buffer, buf, BUFFER_SIZE);
 				} else if (INCOMING_COLOR_DEPTH == 16) {
-					for (uint16_t i = 0; i < NUM_LEDS; i++) {
-						col = &buffer[i];
-
-						uint8_t  high  = buf[idx++];
-						uint8_t  low   = buf[idx++];
-						uint16_t rgb16 = ((uint16_t)high << 8) | low;
-
-						uint8_t r5 = (rgb16 >> 11) & 0x1F;
-						uint8_t g6 = (rgb16 >> 5)  & 0x3F;
-						uint8_t b5 =  rgb16        & 0x1F;
-
-						col->red   = r5 << 3;
-						col->green = g6 << 2;
-						col->blue  = b5 << 3;
+					uint16_t idx = 0;
+					for (uint16_t i = 0; i < NUM_LEDS; i++, idx += 2) {
+						convert16to24bit(buf[idx], buf[idx + 1], &buffer[i]);
 					}
 				}
-				bg.drawString(0, 0, {255,0,0}, ("F:" + String(frame)).c_str());	
-				bg.drawString(0, 7, {255,0,0}, ("P:" + String(packetSize)).c_str());
 
-				static unsigned long lastFrameTime = millis();
-				unsigned long currentTime = millis();
-				float fps = 1000.0 / (currentTime - lastFrameTime);
-				lastFrameTime = currentTime;
 				
-				bg.drawString(0, 14, {255,0,0}, ("FPS:" + String(fps, 1)).c_str());
+
+				// Update debug information
+				char debugStr[16];
+				sprintf(debugStr, "F:%lu", frameCount);
+				bg.drawString(0, 0, {255,0,0}, debugStr);
+				// sprintf(debugStr, "FPS:%.1f", currentFPS);
+				// bg.drawString(0, 14, {255,0,0}, debugStr);
 
 				bg.swapBuffers();
-				frame++;
-				digitalWrite(PICO_LED_PIN, frame / 20 % 2);   // Let's animate the built-in LED as well	
-            }
-        }
-    }
-	delay(5);
+
+			
+
+			}
+		}
+	}
+	// // Update FPS calculation
+	// frameCount++;
+	// uint32_t now = millis();
+	// if (now - lastFPSUpdate >= FPS_UPDATE_INTERVAL) {
+	// 	currentFPS = frameCount * 1000.0f / (now - lastFPSUpdate);
+	// 	frameCount = 0;
+	// 	lastFPSUpdate = now;
+	// }
 }
